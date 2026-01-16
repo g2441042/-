@@ -4,6 +4,7 @@ load_dotenv()
 
 from flask import Flask, render_template_string, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func  # ★追加: 平均点計算用
 
 app = Flask(__name__)
 
@@ -31,7 +32,6 @@ class Review(db.Model):
     menu = db.relationship('Menu', backref='reviews')
 
 # --- 画面表示 (HTML) ---
-# 編集画面も含めたHTMLテンプレート
 HTML_TEMPLATE = """
 <!doctype html>
 <html>
@@ -40,31 +40,58 @@ HTML_TEMPLATE = """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; color: #333; }
-        h1 { text-align: center; color: #2c3e50; }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; }
+        
+        /* 検索バーのデザイン */
+        .search-area { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); text-align: center; margin-bottom: 20px; }
+        .search-area input[type="text"] { width: 40%; }
+        .search-area select { width: 20%; }
+
         .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; color: white; text-decoration: none; font-size: 14px; }
+        .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; color: white; text-decoration: none; font-size: 14px; display: inline-block; }
         .btn-add { background-color: #27ae60; }
         .btn-del { background-color: #e74c3c; }
         .btn-edit { background-color: #f39c12; }
         .btn-sub { background-color: #3498db; }
+        
         .menu-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
-        input[type="text"], input[type="number"], select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-right: 5px; }
+        input, select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-right: 5px; }
+        
         .review-list { list-style: none; padding: 0; }
-        .review-list li { background: #fafafa; border-bottom: 1px solid #eee; padding: 8px; font-size: 0.9em; }
+        .review-list li { background: #fafafa; border-bottom: 1px solid #eee; padding: 8px; font-size: 0.9em; position: relative; }
         .rating { color: #f1c40f; }
+        .badge { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; color: #555; }
     </style>
 </head>
 <body>
     <h1>🍛 GakuMeshi Menu</h1>
     
-    <div class="card">
+    <div class="search-area">
+        <form action="/" method="GET">
+            <i class="fas fa-search" style="color:#aaa;"></i>
+            <input type="text" name="search" placeholder="メニュー名で検索..." value="{{ search_query }}">
+            <select name="sort">
+                <option value="new" {% if sort_order == 'new' %}selected{% endif %}>📅 新着順</option>
+                <option value="price_asc" {% if sort_order == 'price_asc' %}selected{% endif %}>💰 安い順</option>
+                <option value="rating" {% if sort_order == 'rating' %}selected{% endif %}>⭐ 評価順</option>
+            </select>
+            <input type="submit" value="検索" class="btn btn-sub">
+            <a href="/" class="btn" style="background:#95a5a6;">リセット</a>
+        </form>
+    </div>
+    
+    <div class="card" style="border-left: 5px solid #27ae60;">
         <h3>➕ 新メニュー登録</h3>
         <form method="POST" action="/add_menu">
-            <input type="text" name="name" required placeholder="メニュー名 (例: カツ丼)">
-            <input type="number" name="price" required placeholder="価格 (例: 500)">
+            <input type="text" name="name" required maxlength="50" placeholder="メニュー名 (例: カツ丼)">
+            <input type="number" name="price" required min="0" placeholder="価格 (例: 500)">
             <input type="submit" value="追加" class="btn btn-add">
         </form>
     </div>
+
+    {% if menus|length == 0 %}
+        <p style="text-align:center; color:#777;">該当するメニューは見つかりませんでした😢</p>
+    {% endif %}
 
     {% for menu in menus %}
     <div class="card">
@@ -75,7 +102,6 @@ HTML_TEMPLATE = """
             </div>
             <div>
                 <a href="/edit_menu/{{ menu.id }}" class="btn btn-edit">編集</a>
-                
                 <form action="/delete_menu/{{ menu.id }}" method="POST" style="display:inline;" onsubmit="return confirm('本当に削除しますか？');">
                     <input type="submit" value="削除" class="btn btn-del">
                 </form>
@@ -90,17 +116,19 @@ HTML_TEMPLATE = """
                     <span class="rating">{{ "★" * review.rating }}</span> 
                     {{ review.comment }} <small style="color: #777;">(by {{ review.user_name }})</small>
                     <form action="/delete_review/{{ review.id }}" method="POST" style="display:inline; float:right;">
-                        <button type="submit" style="background:none; border:none; color:#999; cursor:pointer;" onclick="return confirm('レビューを消しますか？');">×</button>
+                        <button type="submit" style="background:none; border:none; color:#e74c3c; cursor:pointer;" onclick="return confirm('レビューを消しますか？');">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </form>
                 </li>
             {% else %}
-                <li style="color: #999;">まだレビューはありません。一番乗りしよう！</li>
+                <li style="color: #999;">まだレビューはありません。</li>
             {% endfor %}
         </ul>
 
         <div style="margin-top: 15px; border-top: 1px dashed #ddd; padding-top: 10px;">
             <form method="POST" action="/add_review/{{ menu.id }}">
-                <input type="text" name="user_name" placeholder="名前" required size="10">
+                <input type="text" name="user_name" placeholder="名前" required maxlength="20" size="10">
                 <select name="rating">
                     <option value="5">★★★★★</option>
                     <option value="4">★★★★</option>
@@ -136,9 +164,9 @@ EDIT_TEMPLATE = """
         <h2>✏️ メニュー情報の編集</h2>
         <form method="POST">
             <label>メニュー名:</label>
-            <input type="text" name="name" value="{{ menu.name }}" required>
+            <input type="text" name="name" value="{{ menu.name }}" required maxlength="50">
             <label>価格:</label>
-            <input type="number" name="price" value="{{ menu.price }}" required>
+            <input type="number" name="price" value="{{ menu.price }}" required min="0">
             <div style="margin-top: 20px;">
                 <input type="submit" value="更新する" class="btn" style="background-color: #27ae60;">
                 <a href="/" class="btn" style="background-color: #7f8c8d; text-decoration: none;">キャンセル</a>
@@ -152,8 +180,30 @@ EDIT_TEMPLATE = """
 # --- ルーティング ---
 @app.route('/')
 def index():
-    all_menus = Menu.query.order_by(Menu.id.desc()).all() # 新しい順に表示
-    return render_template_string(HTML_TEMPLATE, menus=all_menus)
+    # 検索ワードと並び順を取得
+    search_query = request.args.get('search', '')
+    sort_order = request.args.get('sort', 'new')
+    
+    query = Menu.query
+    
+    # ★検索フィルタ適用
+    if search_query:
+        query = query.filter(Menu.name.contains(search_query))
+    
+    # ★並び替えロジック
+    if sort_order == 'price_asc':
+        # 安い順
+        query = query.order_by(Menu.price)
+    elif sort_order == 'rating':
+        # 評価が高い順（レビューテーブルと結合して平均点を計算）
+        query = query.outerjoin(Review).group_by(Menu.id).order_by(func.avg(Review.rating).desc().nullslast())
+    else:
+        # デフォルト：新着順
+        query = query.order_by(Menu.id.desc())
+        
+    all_menus = query.all()
+    
+    return render_template_string(HTML_TEMPLATE, menus=all_menus, search_query=search_query, sort_order=sort_order)
 
 @app.route('/add_menu', methods=['POST'])
 def add_menu():
@@ -164,17 +214,14 @@ def add_menu():
     db.session.commit()
     return redirect(url_for('index'))
 
-# ★追加機能: 編集画面の表示と更新 (Update)
 @app.route('/edit_menu/<int:id>', methods=['GET', 'POST'])
 def edit_menu(id):
     menu = Menu.query.get_or_404(id)
     if request.method == 'POST':
-        # 更新処理
         menu.name = request.form.get('name')
         menu.price = request.form.get('price')
         db.session.commit()
         return redirect(url_for('index'))
-    # 編集画面を表示
     return render_template_string(EDIT_TEMPLATE, menu=menu)
 
 @app.route('/delete_menu/<int:id>', methods=['POST'])
