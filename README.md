@@ -41,7 +41,6 @@ graph TD
     App
     DB
     end
-\\\
 
 ---
 
