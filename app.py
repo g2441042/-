@@ -42,6 +42,7 @@ HTML_TEMPLATE = """
         .menu-item { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
         .review-form { background-color: #f9f9f9; padding: 10px; margin-top: 10px; border-radius: 5px; }
         .delete-btn { background-color: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
+        .review-delete-btn { color: red; border: none; background: none; cursor: pointer; font-weight: bold; margin-left: 5px; }
         .header-area { display: flex; justify-content: space-between; align-items: center; }
     </style>
 </head>
@@ -59,88 +60,3 @@ HTML_TEMPLATE = """
 
     {% for menu in menus %}
     <div class="menu-item">
-        <div class="header-area">
-            <h2 style="margin: 0;">{{ menu.name }} <small>({{ menu.price }}円)</small></h2>
-            
-            <form action="/delete_menu/{{ menu.id }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
-                <input type="submit" value="削除" class="delete-btn">
-            </form>
-        </div>
-        
-        <p>レビュー数: {{ menu.reviews|length }}件</p>
-        
-        <ul>
-            {% for review in menu.reviews %}
-                <li>
-                    <b style="color: #f39c12;">{{ "★" * review.rating }}</b> 
-                    {{ review.comment }} <small>(by {{ review.user_name }})</small>
-                </li>
-            {% else %}
-                <li style="color: #999;">まだレビューはありません。</li>
-            {% endfor %}
-        </ul>
-
-        <div class="review-form">
-            <b>このメニューのレビューを書く:</b>
-            <form method="POST" action="/add_review/{{ menu.id }}">
-                <input type="text" name="user_name" placeholder="あなたの名前" required size="10">
-                <select name="rating">
-                    <option value="5">★★★★★ (5)</option>
-                    <option value="4">★★★★ (4)</option>
-                    <option value="3">★★★ (3)</option>
-                    <option value="2">★★ (2)</option>
-                    <option value="1">★ (1)</option>
-                </select>
-                <input type="text" name="comment" placeholder="感想を一言！" size="30">
-                <input type="submit" value="投稿">
-            </form>
-        </div>
-    </div>
-    {% endfor %}
-</body>
-</html>
-"""
-
-# --- ルーティング ---
-@app.route('/')
-def index():
-    all_menus = Menu.query.all()
-    return render_template_string(HTML_TEMPLATE, menus=all_menus)
-
-@app.route('/add_menu', methods=['POST'])
-def add_menu():
-    name = request.form.get('name')
-    price = request.form.get('price')
-    new_menu = Menu(name=name, price=price)
-    db.session.add(new_menu)
-    db.session.commit()
-    return redirect(url_for('index'))
-
-@app.route('/add_review/<int:menu_id>', methods=['POST'])
-def add_review(menu_id):
-    user_name = request.form.get('user_name')
-    rating = request.form.get('rating')
-    comment = request.form.get('comment')
-    new_review = Review(menu_id=menu_id, user_name=user_name, rating=rating, comment=comment)
-    db.session.add(new_review)
-    db.session.commit()
-    return redirect(url_for('index'))
-
-# ★追加部分：メニュー削除機能 (Delete)
-@app.route('/delete_menu/<int:id>', methods=['POST'])
-def delete_menu(id):
-    menu = Menu.query.get_or_404(id)
-    
-    # メニューに紐づくレビューを先に全て削除 (これをしないとDBエラーになる)
-    Review.query.filter_by(menu_id=id).delete()
-    
-    # メニュー本体を削除
-    db.session.delete(menu)
-    db.session.commit()
-    
-    return redirect(url_for('index'))
-
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    app.run(debug=True, host='0.0.0.0')
