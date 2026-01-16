@@ -1,0 +1,29 @@
+-- テーブル作成（Users, Menus, Reviews）
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(80) UNIQUE NOT NULL,
+    email VARCHAR(120) UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS menus (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price INTEGER NOT NULL,
+    category VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    menu_id INTEGER REFERENCES menus(id),
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- テストデータの投入
+INSERT INTO menus (name, price, category) VALUES 
+('日替わりA定食', 500, '定食'),
+('カツカレー', 450, 'カレー'),
+('醤油ラーメン', 380, '麺類');
