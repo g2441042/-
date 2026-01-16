@@ -40,7 +40,7 @@ graph TD
     Web
     App
     DB
-    end
+    end\\\
 
 ---
 
