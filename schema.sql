@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS menus (
 
 CREATE TABLE IF NOT EXISTS reviews (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id),
+    user_name VARCHAR(80),
     menu_id INTEGER REFERENCES menus(id),
     rating INTEGER CHECK (rating >= 1 AND rating <= 5),
     comment TEXT,
