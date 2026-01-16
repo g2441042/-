@@ -24,12 +24,11 @@ class Menu(db.Model):
 class Review(db.Model):
     __tablename__ = 'reviews'
     id = db.Column(db.Integer, primary_key=True)
-    user_name = db.Column(db.String(80)) # 名前で保存するように修正済み
+    user_name = db.Column(db.String(80)) 
     menu_id = db.Column(db.Integer, db.ForeignKey('menus.id'))
     rating = db.Column(db.Integer, nullable=False)
     comment = db.Column(db.Text)
     
-    # リレーション（メニューからレビューを参照できるようにする）
     menu = db.relationship('Menu', backref='reviews')
 
 # --- 画面表示 (HTML) ---
@@ -42,6 +41,8 @@ HTML_TEMPLATE = """
         body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         .menu-item { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
         .review-form { background-color: #f9f9f9; padding: 10px; margin-top: 10px; border-radius: 5px; }
+        .delete-btn { background-color: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
+        .header-area { display: flex; justify-content: space-between; align-items: center; }
     </style>
 </head>
 <body>
@@ -58,7 +59,14 @@ HTML_TEMPLATE = """
 
     {% for menu in menus %}
     <div class="menu-item">
-        <h2 style="margin: 0;">{{ menu.name }} <small>({{ menu.price }}円)</small></h2>
+        <div class="header-area">
+            <h2 style="margin: 0;">{{ menu.name }} <small>({{ menu.price }}円)</small></h2>
+            
+            <form action="/delete_menu/{{ menu.id }}" method="POST" onsubmit="return confirm('本当に削除しますか？');">
+                <input type="submit" value="削除" class="delete-btn">
+            </form>
+        </div>
+        
         <p>レビュー数: {{ menu.reviews|length }}件</p>
         
         <ul>
@@ -108,16 +116,26 @@ def add_menu():
     db.session.commit()
     return redirect(url_for('index'))
 
-# ★追加部分：レビュー投稿を受け取る機能
 @app.route('/add_review/<int:menu_id>', methods=['POST'])
 def add_review(menu_id):
     user_name = request.form.get('user_name')
     rating = request.form.get('rating')
     comment = request.form.get('comment')
-    
-    # DBに保存
     new_review = Review(menu_id=menu_id, user_name=user_name, rating=rating, comment=comment)
     db.session.add(new_review)
+    db.session.commit()
+    return redirect(url_for('index'))
+
+# ★追加部分：メニュー削除機能 (Delete)
+@app.route('/delete_menu/<int:id>', methods=['POST'])
+def delete_menu(id):
+    menu = Menu.query.get_or_404(id)
+    
+    # メニューに紐づくレビューを先に全て削除 (これをしないとDBエラーになる)
+    Review.query.filter_by(menu_id=id).delete()
+    
+    # メニュー本体を削除
+    db.session.delete(menu)
     db.session.commit()
     
     return redirect(url_for('index'))
