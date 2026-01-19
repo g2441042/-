@@ -43,7 +43,7 @@ graph TD
     DB
     end
 
----
+---mermaid
 
 erDiagram
     %% 1つのメニューに対し、0個以上のレビューが存在する
