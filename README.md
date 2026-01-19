@@ -28,6 +28,7 @@
 ## 2. システム設計 (Architect)
 
 ### システム構成図 (System Architecture)
+
 GitHubのMermaid機能を使用して、Web 3層構成を定義しています。
 
 ```mermaid
