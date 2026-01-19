@@ -41,3 +41,28 @@ graph TD
     App
     DB
     end
+
+
+
+
+
+erDiagram
+    %% 1つのメニューに対し、0個以上のレビューが存在する
+    MENUS ||--o{ REVIEWS : "has"
+
+    MENUS {
+        int id PK "ID (主キー)"
+        string name "メニュー名"
+        int price "価格"
+        string category "カテゴリ (定食/カレー等)"
+    }
+
+    REVIEWS {
+        int id PK "ID (主キー)"
+        string user_name "投稿者名"
+        int rating "星評価 (1-5)"
+        string comment "コメント"
+        int likes "いいね数"
+        datetime created_at "投稿日時"
+        int menu_id FK "メニューID (外部キー)"
+    }
