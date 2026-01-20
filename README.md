@@ -63,4 +63,3 @@ erDiagram
         datetime created_at "投稿日時"
         int menu_id FK "メニューID (外部キー)"
     }
-
