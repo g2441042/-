@@ -1,42 +1,76 @@
 import os
+# .envファイルを読み込むためのライブラリ
+# データベースのパスワードや秘密鍵などの機密情報を環境変数として管理するために使用します
 from dotenv import load_dotenv
 load_dotenv()
 
+# Flask: Webアプリを作るためのフレームワーク
+# render_template_string: HTMLテンプレート（文字列）を表示する関数
+# request: フォームから送られてきたデータを受け取る
+# redirect, url_for: 別のページへ転送する
+# flash: 一時的なメッセージ（「登録しました」など）を表示する
 from flask import Flask, render_template_string, request, redirect, url_for, flash
+
+# SQLAlchemy: データベースをPythonのクラスとして扱うためのライブラリ（ORM）
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
 
+# アプリケーション本体の作成
 app = Flask(__name__)
 
-# セキュリティ設定 (フラッシュメッセージに必要)
+# --- セキュリティと設定 ---
+# セッション情報（ログイン状態など）やフラッシュメッセージを暗号化するためのキー
+# 本番環境では推測されにくいランダムな文字列にする必要があります
 app.config['SECRET_KEY'] = 'dev-secret-key'
 
-# データベース設定
+# データベースの接続先設定
+# 環境変数 'DATABASE_URL' があればそれを使い、なければローカルのPostgreSQLを使います
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://localhost/gakumeshi_db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False # メモリ節約のため変更追跡機能をオフ
 
+# データベース操作用オブジェクトの作成
 db = SQLAlchemy(app)
 
-# --- モデル定義 ---
+# ==========================================
+# データベースのモデル定義 (テーブルの設計図)
+# ==========================================
+
 class Menu(db.Model):
+    """
+    メニュー（料理）情報を保存するテーブル
+    """
     __tablename__ = 'menus'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    price = db.Column(db.Integer, nullable=False)
-    category = db.Column(db.String(50)) # カテゴリ（カレー、定食など）
+    
+    id = db.Column(db.Integer, primary_key=True)      # メニューID (自動で連番が振られる)
+    name = db.Column(db.String(100), nullable=False)  # 料理名 (必須入力)
+    price = db.Column(db.Integer, nullable=False)     # 価格 (必須入力)
+    category = db.Column(db.String(50))               # カテゴリ（定食、カレー、麺類など）
 
 class Review(db.Model):
+    """
+    各メニューに対するレビュー（口コミ）を保存するテーブル
+    """
     __tablename__ = 'reviews'
-    id = db.Column(db.Integer, primary_key=True)
-    user_name = db.Column(db.String(80)) 
-    menu_id = db.Column(db.Integer, db.ForeignKey('menus.id'))
-    rating = db.Column(db.Integer, nullable=False)
-    comment = db.Column(db.Text)
-    likes = db.Column(db.Integer, default=0) # ★追加: いいね数
     
+    id = db.Column(db.Integer, primary_key=True)      # レビューID
+    user_name = db.Column(db.String(80))              # 投稿者名
+    
+    # どのメニューへのレビューかを紐付けるための外部キー (menusテーブルのidを参照)
+    menu_id = db.Column(db.Integer, db.ForeignKey('menus.id'))
+    
+    rating = db.Column(db.Integer, nullable=False)    # 評価 (1〜5の星の数)
+    comment = db.Column(db.Text)                      # コメント本文
+    likes = db.Column(db.Integer, default=0)          # 「いいね」の数 (初期値は0)
+    
+    # リレーション設定: 
+    # これにより、menu.reviews でそのメニューに関連するレビュー一覧を取得できるようになる
     menu = db.relationship('Menu', backref='reviews')
 
-# --- HTMLテンプレート (全部入り) ---
+# ==========================================
+# フロントエンド (HTMLテンプレート)
+# ==========================================
+
+# メイン画面のHTML
 HTML_TEMPLATE = """
 <!doctype html>
 <html>
@@ -44,25 +78,26 @@ HTML_TEMPLATE = """
     <title>GakuMeshi Pro - 学食レビュー</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        /* 全体のスタイル定義 */
         body { font-family: "Helvetica Neue", Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #f0f2f5; color: #333; }
         
-        /* ダッシュボード */
+        /* ダッシュボード（上部の統計情報） */
         .dashboard { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 15px; }
         .stat-card { background: white; flex: 1; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #3498db; }
         .stat-number { font-size: 2em; font-weight: bold; color: #2c3e50; }
         .stat-label { color: #7f8c8d; font-size: 0.9em; }
 
-        /* フラッシュメッセージ */
+        /* フラッシュメッセージ（成功/失敗の通知） */
         .alert { padding: 15px; margin-bottom: 20px; border-radius: 5px; color: white; animation: fadeIn 0.5s; }
         .alert-success { background-color: #2ecc71; }
         .alert-error { background-color: #e74c3c; }
 
-        /* 検索＆フィルタ */
+        /* 検索・フィルタエリア */
         .controls { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .category-tags a { display: inline-block; padding: 5px 12px; background: #eef2f7; border-radius: 20px; color: #555; text-decoration: none; margin-right: 5px; font-size: 0.9em; transition: 0.3s; }
         .category-tags a:hover, .category-tags a.active { background: #3498db; color: white; }
 
-        /* カードデザイン */
+        /* メニューカードのデザイン */
         .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: transform 0.2s; }
         .card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
         
@@ -70,15 +105,18 @@ HTML_TEMPLATE = """
         .price-tag { font-size: 1.3em; font-weight: bold; color: #2c3e50; }
         .category-badge { background: #9b59b6; color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.7em; vertical-align: middle; margin-left: 10px; }
 
-        /* ボタン類 */
+        /* ボタン類のスタイル */
         .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; color: white; text-decoration: none; font-size: 14px; }
         .btn-add { background: linear-gradient(135deg, #2ecc71, #27ae60); }
         .btn-edit { background-color: #f39c12; }
         .btn-del { background-color: #e74c3c; }
+        .btn-sub { background-color: #3498db; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;}
+        
+        /* いいねボタン */
         .like-btn { background: none; border: 1px solid #ddd; color: #888; padding: 3px 8px; border-radius: 15px; cursor: pointer; transition: 0.2s; }
         .like-btn:hover { color: #e74c3c; border-color: #e74c3c; background: #fff0f0; }
 
-        /* その他 */
+        /* フォーム部品 */
         input, select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -209,7 +247,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# 編集用テンプレート (簡易版)
+# 編集画面用のHTMLテンプレート（簡易版）
 EDIT_TEMPLATE = """
 <!doctype html>
 <html>
@@ -234,24 +272,37 @@ EDIT_TEMPLATE = """
 </html>
 """
 
-# --- ルーティング ---
+# ==========================================
+# バックエンド処理 (ルーティング設定)
+# ==========================================
+
+# --- トップページ処理 ---
 @app.route('/')
 def index():
+    # URLパラメータの取得 (?search=...&sort=...)
     search_query = request.args.get('search', '')
     sort_order = request.args.get('sort', 'new')
     current_cat = request.args.get('category', '')
     
+    # データの取得とフィルタリング
     query = Menu.query
-    if search_query: query = query.filter(Menu.name.contains(search_query))
-    if current_cat: query = query.filter(Menu.category == current_cat)
+    if search_query: 
+        query = query.filter(Menu.name.contains(search_query)) # 部分一致検索
+    if current_cat: 
+        query = query.filter(Menu.category == current_cat)     # カテゴリ一致
     
-    if sort_order == 'price_asc': query = query.order_by(Menu.price)
-    elif sort_order == 'rating': query = query.outerjoin(Review).group_by(Menu.id).order_by(func.avg(Review.rating).desc().nullslast())
-    else: query = query.order_by(Menu.id.desc())
+    # 並び替え処理
+    if sort_order == 'price_asc': 
+        query = query.order_by(Menu.price) # 価格昇順
+    elif sort_order == 'rating': 
+        # レビューテーブルと結合して、平均評価順に並べる (高度なSQL操作)
+        query = query.outerjoin(Review).group_by(Menu.id).order_by(func.avg(Review.rating).desc().nullslast())
+    else: 
+        query = query.order_by(Menu.id.desc()) # 新着順(ID降順)
         
     all_menus = query.all()
     
-    # ★統計データの計算
+    # 統計情報の計算 (ダッシュボード用)
     total_menus = Menu.query.count()
     total_reviews = Review.query.count()
     avg_price = db.session.query(func.avg(Menu.price)).scalar()
@@ -264,11 +315,14 @@ def index():
         'avg_price': avg_price, 'max_price': max_price, 'min_price': min_price
     }
 
+    # テンプレートを表示
     return render_template_string(HTML_TEMPLATE, menus=all_menus, stats=stats, search_query=search_query, sort_order=sort_order, current_cat=current_cat)
 
+# --- メニュー追加処理 ---
 @app.route('/add_menu', methods=['POST'])
 def add_menu():
     try:
+        # フォームからデータを受け取り、DBに保存
         new_menu = Menu(
             name=request.form.get('name'),
             price=request.form.get('price'),
@@ -281,10 +335,12 @@ def add_menu():
         flash('エラーが発生しました', 'error')
     return redirect(url_for('index'))
 
+# --- メニュー編集処理 ---
 @app.route('/edit_menu/<int:id>', methods=['GET', 'POST'])
 def edit_menu(id):
-    menu = Menu.query.get_or_404(id)
+    menu = Menu.query.get_or_404(id) # IDからメニュー検索 (なければ404エラー)
     if request.method == 'POST':
+        # データの更新処理
         menu.name = request.form.get('name')
         menu.price = request.form.get('price')
         menu.category = request.form.get('category')
@@ -293,15 +349,18 @@ def edit_menu(id):
         return redirect(url_for('index'))
     return render_template_string(EDIT_TEMPLATE, menu=menu)
 
+# --- メニュー削除処理 ---
 @app.route('/delete_menu/<int:id>', methods=['POST'])
 def delete_menu(id):
     menu = Menu.query.get_or_404(id)
+    # 関連するレビューも一緒に削除 (外部キー制約エラー防止のため)
     Review.query.filter_by(menu_id=id).delete()
     db.session.delete(menu)
     db.session.commit()
     flash('メニューを削除しました', 'error')
     return redirect(url_for('index'))
 
+# --- レビュー投稿処理 ---
 @app.route('/add_review/<int:menu_id>', methods=['POST'])
 def add_review(menu_id):
     new_review = Review(
@@ -315,14 +374,15 @@ def add_review(menu_id):
     flash('レビューを投稿しました！ありがとうございます。', 'success')
     return redirect(url_for('index'))
 
-# ★いいね機能
+# --- レビューへの「いいね」処理 ---
 @app.route('/like_review/<int:id>', methods=['POST'])
 def like_review(id):
     review = Review.query.get_or_404(id)
-    review.likes += 1
+    review.likes += 1 # カウントアップ
     db.session.commit()
     return redirect(url_for('index'))
 
+# --- レビュー削除処理 ---
 @app.route('/delete_review/<int:id>', methods=['POST'])
 def delete_review(id):
     review = Review.query.get_or_404(id)
@@ -331,7 +391,12 @@ def delete_review(id):
     flash('レビューを削除しました', 'error')
     return redirect(url_for('index'))
 
+# ==========================================
+# アプリケーションの起動
+# ==========================================
 if __name__ == '__main__':
     with app.app_context():
+        # データベースファイル(テーブル)が存在しなければ作成する
         db.create_all()
+    # サーバーを起動 (debug=Trueにするとエラー時に詳細が表示される)
     app.run(debug=True, host='0.0.0.0')
